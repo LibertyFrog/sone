@@ -512,6 +512,7 @@ pub fn run() {
                 }
 
                 let _ = window.show();
+                window.set_focus().ok();
             }
 
             // System tray icon (ksni — native D-Bus StatusNotifierItem)
