@@ -730,6 +730,7 @@ pub fn run() {
             commands::utility::test_proxy_connection,
             commands::utility::inhibit_idle,
             commands::utility::uninhibit_idle,
+            commands::utility::update_titlebar_color,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

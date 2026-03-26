@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useAtomValue } from "jotai";
+import { invoke } from "@tauri-apps/api/core";
 import { themeAtom } from "../atoms/theme";
 import { deriveTheme, themeToCssVars } from "../lib/theme";
 
@@ -30,5 +31,6 @@ export function useTheme() {
     const min = Math.min(r, g, b);
     const l = (max + min) / 2;
     root.style.colorScheme = l < 0.5 ? "dark" : "light";
+    invoke("update_titlebar_color", { bgColor: theme.bgBase, isDark: l < 0.5 }).catch(() => {});
   }, [theme]);
 }

@@ -296,6 +296,64 @@ pub async fn uninhibit_idle(state: State<'_, AppState>) -> Result<(), SoneError>
     Ok(())
 }
 
+thread_local! {
+    static TITLEBAR_CSS_PROVIDER: std::cell::RefCell<Option<gtk::CssProvider>> =
+        std::cell::RefCell::new(None);
+}
+
+#[tauri::command]
+pub fn update_titlebar_color(bg_color: String, is_dark: bool) -> Result<(), SoneError> {
+    let text_color = if is_dark {
+        "rgba(255,255,255,0.85)"
+    } else {
+        "rgba(0,0,0,0.85)"
+    };
+    let btn_hover_bg = if is_dark {
+        "rgba(255,255,255,0.10)"
+    } else {
+        "rgba(0,0,0,0.08)"
+    };
+
+    let css = format!(
+        "headerbar, .titlebar {{ \
+            background: {bg_color}; \
+            box-shadow: none; \
+            border-bottom: none; \
+        }} \
+        headerbar .title, .titlebar .title {{ \
+            color: {text_color}; \
+            font-size: 11px; \
+        }} \
+        headerbar button, .titlebar button {{ \
+            color: {text_color}; \
+        }} \
+        headerbar button:hover, .titlebar button:hover {{ \
+            background: {btn_hover_bg}; \
+        }}"
+    );
+
+    gtk::glib::MainContext::default().invoke(move || {
+        use gtk::prelude::*;
+        if let Some(screen) = gdk::Screen::default() {
+            TITLEBAR_CSS_PROVIDER.with(|cell| {
+                let mut guard = cell.borrow_mut();
+                if let Some(old) = guard.take() {
+                    gtk::StyleContext::remove_provider_for_screen(&screen, &old);
+                }
+                let provider = gtk::CssProvider::new();
+                provider.load_from_data(css.as_bytes()).ok();
+                gtk::StyleContext::add_provider_for_screen(
+                    &screen,
+                    &provider,
+                    gtk::STYLE_PROVIDER_PRIORITY_USER,
+                );
+                *guard = Some(provider);
+            });
+        }
+    });
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn test_proxy_connection(
     settings: crate::ProxySettings,
