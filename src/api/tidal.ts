@@ -126,35 +126,37 @@ function cached<T>(
     entry.accessOrder = ++accessCounter;
     return Promise.resolve(entry.data as T);
   }
-  return fetcher().catch((err) => {
-    checkNetworkError(err);
-    throw err;
-  }).then((data) => {
-    // Remove stale entry if present
-    if (store.has(hk)) removeEntry(hk);
-    const size = estimateSize(data);
-    evictIfNeeded(size);
-    const newEntry: CacheEntry = {
-      data,
-      ts: Date.now(),
-      ttl,
-      tags,
-      accessOrder: ++accessCounter,
-      estimatedSize: size,
-    };
-    store.set(hk, newEntry);
-    keyMap.set(hk, key);
-    currentBytes += size;
-    for (const tag of tags) {
-      let set = tagIndex.get(tag);
-      if (!set) {
-        set = new Set();
-        tagIndex.set(tag, set);
+  return fetcher()
+    .catch((err) => {
+      checkNetworkError(err);
+      throw err;
+    })
+    .then((data) => {
+      // Remove stale entry if present
+      if (store.has(hk)) removeEntry(hk);
+      const size = estimateSize(data);
+      evictIfNeeded(size);
+      const newEntry: CacheEntry = {
+        data,
+        ts: Date.now(),
+        ttl,
+        tags,
+        accessOrder: ++accessCounter,
+        estimatedSize: size,
+      };
+      store.set(hk, newEntry);
+      keyMap.set(hk, key);
+      currentBytes += size;
+      for (const tag of tags) {
+        let set = tagIndex.get(tag);
+        if (!set) {
+          set = new Set();
+          tagIndex.set(tag, set);
+        }
+        set.add(hk);
       }
-      set.add(hk);
-    }
-    return data;
-  });
+      return data;
+    });
 }
 
 /** Remove all cache entries matching a tag (fast path) or key prefix (fallback). */
@@ -597,17 +599,25 @@ function parseArtistPageV1(json: any): ArtistPageData {
 export async function getArtistViewAll(
   artistId: number,
   viewAllPath: string,
-): Promise<any[]> {
+  offset: number = 0,
+  limit: number = 50,
+): Promise<{ items: any[]; totalNumberOfItems: number }> {
   return cached(
-    `artist-view-all:${artistId}:${viewAllPath}`,
+    `artist-view-all:${artistId}:${viewAllPath}:${offset}:${limit}`,
     ["artist"],
     async () => {
       const raw = await invoke<any>("get_artist_view_all", {
         artistId,
         viewAllPath,
+        offset,
+        limit,
       });
-      const items = raw?.items || [];
-      return items.map((item: any) => item.data || item);
+      const items = (raw?.items || []).map((item: any) => item.data || item);
+      const totalNumberOfItems =
+        items.length >= limit
+          ? offset + items.length + 1
+          : offset + items.length;
+      return { items, totalNumberOfItems };
     },
     TTL.MEDIUM,
   );
@@ -731,9 +741,7 @@ export interface MixPageResult {
   tracks: Track[];
 }
 
-export async function getMixItems(
-  mixId: string,
-): Promise<MixPageResult> {
+export async function getMixItems(mixId: string): Promise<MixPageResult> {
   return cached(
     `mix-page:${mixId}`,
     ["mix-page"],
@@ -802,8 +810,13 @@ export async function getTrackCredits(trackId: number): Promise<Credit[]> {
   );
 }
 
-export async function getPlaylistDetails(playlistId: string): Promise<Playlist> {
-  const raw = await invoke<Playlist & { publicPlaylist?: boolean }>("get_playlist_details", { playlistId });
+export async function getPlaylistDetails(
+  playlistId: string,
+): Promise<Playlist> {
+  const raw = await invoke<Playlist & { publicPlaylist?: boolean }>(
+    "get_playlist_details",
+    { playlistId },
+  );
   // v1 API returns publicPlaylist (bool), map to accessType
   if (raw.accessType === undefined && raw.publicPlaylist !== undefined) {
     raw.accessType = raw.publicPlaylist ? "PUBLIC" : "UNLISTED";
@@ -959,9 +972,10 @@ function normalizeFolderItem(item: PlaylistFolderItem): PlaylistOrFolder {
         parent: item.parent,
         addedAt: item.addedAt,
         lastModifiedAt: item.lastModifiedAt,
-        totalNumberOfItems: typeof folderData.totalNumberOfItems === "number"
-          ? folderData.totalNumberOfItems
-          : undefined,
+        totalNumberOfItems:
+          typeof folderData.totalNumberOfItems === "number"
+            ? folderData.totalNumberOfItems
+            : undefined,
       },
     };
   }
@@ -984,16 +998,21 @@ function normalizeFolderItem(item: PlaylistFolderItem): PlaylistOrFolder {
       lastUpdated: d.lastUpdated,
       sharingLevel: d.sharingLevel,
       addedAt: item.addedAt,
-      accessType: typeof publicPlaylist === "boolean"
-        ? (publicPlaylist ? "PUBLIC" : "UNLISTED")
-        : undefined,
+      accessType:
+        typeof publicPlaylist === "boolean"
+          ? publicPlaylist
+            ? "PUBLIC"
+            : "UNLISTED"
+          : undefined,
     },
   };
 }
 
-export function normalizePlaylistFolders(
-  response: PlaylistFoldersResponse,
-): { items: PlaylistOrFolder[]; totalNumberOfItems: number; cursor: string | null } {
+export function normalizePlaylistFolders(response: PlaylistFoldersResponse): {
+  items: PlaylistOrFolder[];
+  totalNumberOfItems: number;
+  cursor: string | null;
+} {
   return {
     items: response.items.map(normalizeFolderItem),
     totalNumberOfItems: response.totalNumberOfItems,
@@ -1020,9 +1039,7 @@ export async function renamePlaylistFolder(
   return invoke("rename_playlist_folder", { folderTrn, name });
 }
 
-export async function deletePlaylistFolder(
-  folderTrn: string,
-): Promise<void> {
+export async function deletePlaylistFolder(folderTrn: string): Promise<void> {
   return invoke("delete_playlist_folder", { folderTrn });
 }
 

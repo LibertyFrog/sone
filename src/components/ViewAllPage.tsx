@@ -3,6 +3,7 @@ import { usePlaybackActions } from "../hooks/usePlaybackActions";
 import { useMediaPlay } from "../hooks/useMediaPlay";
 import { useNavigation } from "../hooks/useNavigation";
 import { useFavorites } from "../hooks/useFavorites";
+import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 import { getPageSection, getArtistViewAll } from "../api/tidal";
 import { safeErrorMessage } from "../lib/errorUtils";
 import { type MediaItemType } from "../types";
@@ -60,10 +61,30 @@ export default function ViewAllPage({
     removeFavoriteMix,
   } = useFavorites();
 
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Paginated loading for artist sections
+  const {
+    items: artistItems,
+    isInitialLoading: artistInitialLoading,
+    isLoadingMore: artistLoadingMore,
+    sentinelRef,
+  } = useInfiniteScroll({
+    fetchPage: useCallback(
+      (offset: number, limit: number) =>
+        getArtistViewAll(artistId!, apiPath, offset, limit),
+      [artistId, apiPath],
+    ),
+    pageSize: 50,
+    enabled: !!artistId,
+  });
+
+  // Non-artist sections load all at once
+  const [nonArtistItems, setNonArtistItems] = useState<any[]>([]);
+  const [nonArtistLoading, setNonArtistLoading] = useState(!artistId);
   const [error, setError] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
+
+  const items = artistId ? artistItems : nonArtistItems;
+  const loading = artistId ? artistInitialLoading : nonArtistLoading;
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -84,26 +105,22 @@ export default function ViewAllPage({
   }, []);
 
   useEffect(() => {
+    if (artistId) return;
     if (hasLoadedRef.current) return;
     hasLoadedRef.current = true;
 
     const loadData = async () => {
       try {
-        if (artistId) {
-          const allItems = await getArtistViewAll(artistId, apiPath);
-          setItems(allItems);
-        } else {
-          const result = await getPageSection(apiPath);
-          const allItems = result.sections.flatMap((s) =>
-            Array.isArray(s.items) ? s.items : [],
-          );
-          setItems(allItems);
-        }
+        const result = await getPageSection(apiPath);
+        const allItems = result.sections.flatMap((s) =>
+          Array.isArray(s.items) ? s.items : [],
+        );
+        setNonArtistItems(allItems);
       } catch (err: any) {
         console.error("Failed to load page section:", err);
         setError(safeErrorMessage(err, "Failed to load page"));
       }
-      setLoading(false);
+      setNonArtistLoading(false);
     };
 
     loadData();
@@ -252,6 +269,14 @@ export default function ViewAllPage({
               );
             })}
           </MediaGrid>
+        )}
+
+        {artistId && (
+          <div ref={sentinelRef} className="py-4 flex justify-center">
+            {artistLoadingMore && (
+              <div className="text-th-text-secondary text-sm">Loading...</div>
+            )}
+          </div>
         )}
 
         {/* Media context menu */}
