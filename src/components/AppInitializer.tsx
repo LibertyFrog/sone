@@ -779,6 +779,10 @@ export function AppInitializer() {
     const unlistenPrev = listen("tray:prev-track", () => {
       playPrevious();
     });
+    const unlistenScrollVolume = listen<number>("tray:scroll-volume", (event) => {
+      const step = event.payload * -0.05;
+      setVolume(Math.max(0, Math.min(1, store.get(volumeAtom) + step)));
+    });
     const unlistenMprisPlay = listen("mpris:play", () => {
       if (!store.get(isPlayingAtom)) {
         resumeTrack();
@@ -800,8 +804,9 @@ export function AppInitializer() {
       unlistenMprisPlay.then((fn) => fn());
       unlistenMprisPause.then((fn) => fn());
       unlistenMprisStop.then((fn) => fn());
+      unlistenScrollVolume.then((fn) => fn());
     };
-  }, [store, playNext, playPrevious, pauseTrack, resumeTrack]);
+  }, [store, playNext, playPrevious, pauseTrack, resumeTrack, setVolume]);
 
   // ================================================================
   //  TRAY TOOLTIP — update with current track info

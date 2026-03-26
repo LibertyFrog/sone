@@ -96,6 +96,16 @@ impl ksni::Tray for SoneTray {
         restore_window(&self.app_handle);
     }
 
+    fn secondary_activate(&mut self, _x: i32, _y: i32) {
+        self.app_handle.emit("tray:toggle-play", ()).ok();
+    }
+
+    fn scroll(&mut self, delta: i32, orientation: ksni::Orientation) {
+        if orientation == ksni::Orientation::Vertical {
+            self.app_handle.emit("tray:scroll-volume", delta).ok();
+        }
+    }
+
     fn menu(&self) -> Vec<MenuItem<Self>> {
         vec![
             StandardItem {
